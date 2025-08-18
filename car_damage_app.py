@@ -203,7 +203,9 @@ with st.sidebar:
     st.markdown('<div class="feature-card">', unsafe_allow_html=True)
     st.markdown("**Technical Specifications**")
     st.markdown("""
-    - **Base Model**: Llama-3.2-11B-Vision
+    - **Base Model**: Llama-3.2-11B-Vision-Instruct
+    - **Fine-tuned**: Car damage detection (14,000 images)
+    - **Training Loss**: 0.0758 (excellent convergence)
     - **Specialization**: Automotive damage assessment
     - **Precision**: Professional level
     - **Languages**: French, English
@@ -228,27 +230,27 @@ def load_model():
     with st.spinner("Loading AI model..."):
         try:
             if UNSLOTH_AVAILABLE:
-                # Utiliser Unsloth avec optimisations mémoire
+                # Utiliser Unsloth avec le nouveau modèle fine-tuné
                 model, tokenizer = FastVisionModel.from_pretrained(
-                    model_name="Kakyoin03/car-damage-assessment-llama-vision",
+                    model_name="Kakyoin03/car-damage-detection-llama-vision-14k",
                     load_in_4bit=True,
                     device_map="auto",
                     max_memory={0: "40GB"},  # Limite explicite pour L40S
                 )
                 FastVisionModel.for_inference(model)
-                st.success("Unsloth model loaded successfully!")
+                st.success("Fine-tuned Unsloth model loaded successfully! (14K training)")
             else:
                 # Fallback vers transformers standard avec optimisations
-                st.info("Loading with standard transformers...")
+                st.info("Loading fine-tuned model with standard transformers...")
                 model = AutoModelForCausalLM.from_pretrained(
-                    "Kakyoin03/car-damage-assessment-llama-vision",
+                    "Kakyoin03/car-damage-detection-llama-vision-14k",
                     torch_dtype=torch.float16,
                     device_map="auto",
                     low_cpu_mem_usage=True,
                     max_memory={0: "40GB", "cpu": "20GB"}
                 )
                 tokenizer = AutoProcessor.from_pretrained(
-                    "Kakyoin03/car-damage-assessment-llama-vision"
+                    "Kakyoin03/car-damage-detection-llama-vision-14k"
                 )
                 st.success("Standard model loaded successfully!")
             
@@ -258,11 +260,10 @@ def load_model():
             st.error(f"Model loading error: {e}")
             st.info("Attempting lighter fallback model...")
             try:
-                # Utiliser le modèle original plus léger
-                st.warning("Loading lighter model for better memory usage...")
+                # Utiliser le modèle fine-tuné avec moins de mémoire
                 if UNSLOTH_AVAILABLE:
                     model, tokenizer = FastVisionModel.from_pretrained(
-                        model_name="KHAOULA-KH/LOra_modele",
+                        model_name="Kakyoin03/car-damage-detection-llama-vision-14k",
                         load_in_4bit=True,
                         device_map="auto",
                         max_memory={0: "35GB"},
@@ -291,13 +292,17 @@ def load_model():
 
 # Instruction pour le modèle
 instruction = """Vous êtes un expert en évaluation de dommages automobiles.
-Décrivez uniquement les pièces visibles et endommagées sur l'image.
-- Ne mentionnez rien d'invisible ou non endommagé.
-- Soyez concis et précis.
-- N'inventez rien.
-Format :
-Dommages détectés sur : [liste des pièces visibles et endommagées].
-Severity : [mineur / modéré / majeur]."""
+Analysez l'image et décrivez UNIQUEMENT les pièces visibles et endommagées.
+IMPORTANT: Terminez TOUJOURS votre réponse par la sévérité.
+
+Instructions:
+- Ne mentionnez que les dommages visibles
+- Soyez précis et concis
+- N'inventez rien
+
+Format OBLIGATOIRE:
+Dommages détectés: [description des dommages visibles]
+Sévérité: [MINEUR/MODÉRÉ/MAJEUR]"""
 
 def analyze_car_damage(image, model, tokenizer):
     """Analyse les dommages sur l'image de voiture"""
@@ -489,13 +494,29 @@ with col2:
                 st.markdown("### Analysis Report")
                 st.markdown(f'<div class="analysis-result">{result}</div>', unsafe_allow_html=True)
                 
-                # Extraire la sévérité avec style moderne
-                if "majeur" in result.lower() or "major" in result.lower():
-                    st.markdown('<div class="severity-major"><strong>Severity:</strong> Major damage detected</div>', unsafe_allow_html=True)
-                elif "modéré" in result.lower() or "moderate" in result.lower():
-                    st.markdown('<div class="severity-moderate"><strong>Severity:</strong> Moderate damage detected</div>', unsafe_allow_html=True)
-                elif "mineur" in result.lower() or "minor" in result.lower():
-                    st.markdown('<div class="severity-minor"><strong>Severity:</strong> Minor damage detected</div>', unsafe_allow_html=True)
+                # Extraire et afficher la sévérité de manière plus robuste
+                result_lower = result.lower()
+                severity_detected = False
+                
+                if any(word in result_lower for word in ["majeur", "major", "sévère", "severe", "grave"]):
+                    st.markdown('<div class="severity-major"><strong>🔴 Severity:</strong> Major damage detected</div>', unsafe_allow_html=True)
+                    severity_detected = True
+                elif any(word in result_lower for word in ["modéré", "moderate", "moyen", "medium"]):
+                    st.markdown('<div class="severity-moderate"><strong>🟡 Severity:</strong> Moderate damage detected</div>', unsafe_allow_html=True)
+                    severity_detected = True
+                elif any(word in result_lower for word in ["mineur", "minor", "léger", "light", "faible"]):
+                    st.markdown('<div class="severity-minor"><strong>🟢 Severity:</strong> Minor damage detected</div>', unsafe_allow_html=True)
+                    severity_detected = True
+                
+                # Si aucune sévérité n'est détectée dans le texte, analyser le contenu pour estimer
+                if not severity_detected:
+                    st.markdown("### Severity Assessment")
+                    if any(word in result_lower for word in ["structural", "structurel", "cassé", "broken", "déformé", "deformed", "multiple", "importantes"]):
+                        st.markdown('<div class="severity-major"><strong>🔴 Estimated Severity:</strong> Major damage (based on description)</div>', unsafe_allow_html=True)
+                    elif any(word in result_lower for word in ["dent", "rayure", "scratch", "éraflure", "cabossé", "bumper", "pare"]):
+                        st.markdown('<div class="severity-moderate"><strong>🟡 Estimated Severity:</strong> Moderate damage (based on description)</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="severity-minor"><strong>🟢 Estimated Severity:</strong> Minor damage (based on description)</div>', unsafe_allow_html=True)
     else:
         st.markdown('''
         <div class="metric-card">
@@ -557,9 +578,9 @@ st.markdown("""
         Powered by AI | Built with Streamlit
     </div>
     <div style='font-size: 0.9rem;'>
-        Model: <a href='https://huggingface.co/Kakyoin03/car-damage-assessment-llama-vision' 
+        Model: <a href='https://huggingface.co/Kakyoin03/car-damage-detection-llama-vision-14k' 
                  target='_blank' style='color: #3b82f6; text-decoration: none;'>
-                Kakyoin03/car-damage-assessment-llama-vision
+                Kakyoin03/car-damage-detection-llama-vision-14k
                </a>
     </div>
 </div>
