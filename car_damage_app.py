@@ -292,17 +292,23 @@ def load_model():
 
 # Instruction pour le modèle
 instruction = """Vous êtes un expert en évaluation de dommages automobiles.
-Analysez l'image et décrivez UNIQUEMENT les pièces visibles et endommagées.
-IMPORTANT: Terminez TOUJOURS votre réponse par la sévérité.
+Analysez cette image et décrivez OBLIGATOIREMENT :
+1. Les pièces visibles et endommagées
+2. Le type de dommage (rayure, bosselure, fissure, etc.)
+3. La sévérité EXACTE de chaque dommage pour chaque pièce
+4. L'étendue et la localisation des dommages
 
-Instructions:
-- Ne mentionnez que les dommages visibles
+RÈGLES STRICTES :
+- Ne mentionnez rien d'invisible ou non endommagé
+- TOUJOURS donner une sévérité pour chaque pièce endommagée : MINEURE, MODÉRÉE, ou MAJEURE
 - Soyez précis et concis
 - N'inventez rien
+- Donnez une description technique détaillée
 
-Format OBLIGATOIRE:
-Dommages détectés: [description des dommages visibles]
-Sévérité: [MINEUR/MODÉRÉ/MAJEUR]"""
+FORMAT OBLIGATOIRE :
+Dommages détectés sur : [pièce] - [type de dommage] - Sévérité : [MINEURE/MODÉRÉE/MAJEURE]
+Si plusieurs pièces endommagées, listez chaque pièce avec sa sévérité.
+Évaluation globale : Sévérité [MINEURE/MODÉRÉE/MAJEURE]"""
 
 def analyze_car_damage(image, model, tokenizer):
     """Analyse les dommages sur l'image de voiture"""
@@ -382,7 +388,7 @@ def analyze_car_damage(image, model, tokenizer):
                 
                 # Prepare generation parameters safely
                 generation_kwargs = {
-                    "max_new_tokens": 64,  # Reduced for stability
+                    "max_new_tokens": 64,  # Back to stable setting
                     "use_cache": False,
                     "do_sample": False,  # Use greedy decoding for stability
                 }
@@ -493,30 +499,6 @@ with col2:
                 # Zone de résultat stylisée
                 st.markdown("### Analysis Report")
                 st.markdown(f'<div class="analysis-result">{result}</div>', unsafe_allow_html=True)
-                
-                # Extraire et afficher la sévérité de manière plus robuste
-                result_lower = result.lower()
-                severity_detected = False
-                
-                if any(word in result_lower for word in ["majeur", "major", "sévère", "severe", "grave"]):
-                    st.markdown('<div class="severity-major"><strong>🔴 Severity:</strong> Major damage detected</div>', unsafe_allow_html=True)
-                    severity_detected = True
-                elif any(word in result_lower for word in ["modéré", "moderate", "moyen", "medium"]):
-                    st.markdown('<div class="severity-moderate"><strong>🟡 Severity:</strong> Moderate damage detected</div>', unsafe_allow_html=True)
-                    severity_detected = True
-                elif any(word in result_lower for word in ["mineur", "minor", "léger", "light", "faible"]):
-                    st.markdown('<div class="severity-minor"><strong>🟢 Severity:</strong> Minor damage detected</div>', unsafe_allow_html=True)
-                    severity_detected = True
-                
-                # Si aucune sévérité n'est détectée dans le texte, analyser le contenu pour estimer
-                if not severity_detected:
-                    st.markdown("### Severity Assessment")
-                    if any(word in result_lower for word in ["structural", "structurel", "cassé", "broken", "déformé", "deformed", "multiple", "importantes"]):
-                        st.markdown('<div class="severity-major"><strong>🔴 Estimated Severity:</strong> Major damage (based on description)</div>', unsafe_allow_html=True)
-                    elif any(word in result_lower for word in ["dent", "rayure", "scratch", "éraflure", "cabossé", "bumper", "pare"]):
-                        st.markdown('<div class="severity-moderate"><strong>🟡 Estimated Severity:</strong> Moderate damage (based on description)</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="severity-minor"><strong>🟢 Estimated Severity:</strong> Minor damage (based on description)</div>', unsafe_allow_html=True)
     else:
         st.markdown('''
         <div class="metric-card">
